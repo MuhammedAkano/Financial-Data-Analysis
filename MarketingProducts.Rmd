@@ -1,0 +1,387 @@
+---
+title: "Products"
+output: html_notebook
+---
+
+
+
+```{r}
+#read dataset
+IFraud = read.csv("Fraud.csv")
+head(IFraud)
+
+```
+
+Initial exploration
+```{r}
+#Initial structure of the dataset
+str(IFraud)
+```
+
+
+```{r}
+#drop columns that are not necessary
+  IFraud = IFraud[,-c(2,8,17:18)]
+```
+
+
+```{r}
+  #change the factor variables to factor
+   factors <- c(27,28,15,16,14)
+   IFraud[,factors] <- lapply(IFraud[,factors], factor)
+   #new structure
+    str(IFraud)
+```
+
+
+```{r}
+#missing values
+library(VIM)
+sum(is.na(IFraud)) #11 missing values
+```
+
+
+```{r}
+#zeroes present in age, days of week claimed, and month claimed
+  IFraud$Age[IFraud$Age == 0] = NA
+  IFraud$DayOfWeekClaimed[IFraud$DayOfWeekClaimed == "0"] = NA
+  IFraud$MonthClaimed[IFraud$MonthClaimed == "0"] = NA
+  
+  #drop levels ("0" level) that did not occur
+   IFraud$DayOfWeekClaimed = factor(IFraud$DayOfWeekClaimed)
+   IFraud$MonthClaimed = factor(IFraud$MonthClaimed)
+  
+  #Missing values now
+  sum(is.na(IFraud)) #266 missing values
+  
+```
+
+
+```{r}
+#visualize where they are
+  aggr(IFraud, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, labels=names(hour), cex.axis=.7, gap=3,   ylab=c("Histogram of missing data","Pattern")) #missing values in age and Driver rating day of week claimed and month claimed
+#remove missing values since there are enough observations 
+  Fraud = na.omit(IFraud)
+```
+
+
+```{r}
+#lets explore the numeric columns Age and claim size
+  Numerics = Fraud[,c(9,30)]
+  #summary
+  summary(Numerics)
+```
+
+
+```{r}
+#standard deviation
+  lapply(Numerics, sd)
+```
+
+
+```{r}
+#outliers
+ # library(dplyr)
+  #library(tidyr)
+  #library(purrr)
+#visualize presence of outliers
+  boxplot(Numerics)$out  #outliers present in claimsize
+  
+  #replace outliers with NA
+  replaceoutliers <- function(df){
+           df %>%          
+           map_if(is.numeric, ~ replace(.x, .x %in% boxplot.stats(.x)$out, NA)) %>%
+           bind_cols 
+      }
+  
+  #replace outliers in fraud with NA
+  Fraud = replaceoutliers(Fraud)
+    #remove outliers(NA)
+    Fraud = na.omit(Fraud)
+```
+
+
+```{r}
+#Visualize the columns
+    library(ggplot2)
+    library(reshape2)
+    ggplot(data = melt(Numerics) , aes(x=value)) +
+      geom_histogram() + 
+      facet_wrap(~variable, scales = "free")
+```
+
+
+```{r}
+#Investigate correlation between variables
+    library(GGally)
+      ggcorr(Numerics, label = TRUE, label_round = 2, label_size = 3.5, size = 2, hjust = .85) +
+      ggtitle("Correlation Heatmap") +
+      theme(plot.title = element_text(hjust = 0.5)) #no high correlation
+      
+```
+Question 1
+```{r}
+ #is there is a significant relationship between age and claimsize (by analyzing the variance)
+      summary(aov(Fraud$Age~Fraud$ClaimSize)) #No there isnt
+      #visualize the relationship  
+      plot(aov(Fraud$Age~Fraud$ClaimSize))
+```
+Question 2 - what is the average claimsize based on 
+*accident area
+*month claimed
+*sex
+*year
+```{r}
+#Accident Area
+aggregate(Fraud[, 30], list(Fraud$AccidentArea), mean)
+#sex
+aggregate(Fraud[, 30], list(Fraud$Sex), mean)
+#Year
+aggregate(Fraud[, 30], list(Fraud$Year), mean)
+
+```
+Question 3 - what is the age distribution based on driver rating
+```{r}
+Q3 <- data.frame(Fraud$Age,Fraud$DriverRating)
+colnames(Q3) = c("Age","Rating")
+
+## plot histogram
+Q3_hist <- ggplot(Q3, aes(x= Rating, fill = Rating)) + 
+    geom_bar(position = "dodge", stat = "count")  +
+    ggtitle("Driver ratings") +
+    scale_fill_manual(values = c("#009E73", "#D55E00","#F0E442","#999999")) + 
+    ylab("count") + 
+    xlab("People")
+library(dplyr)
+Q3_ <- group_by(Q3[, c("Age", "Rating")], Rating, Age) %>% summarize(n_Age = n())
+
+Q3_graph <- ggplot(Q3_, aes(x= Age, y = n_Age, color = Rating)) + 
+    geom_line(size = 1.5)  +
+    ggtitle("What is the age distribution ?") +
+    scale_color_manual(values = c("#009E73", "#D55E00","#F0E442","#999999")) + 
+    ylab("number") + 
+    xlab("age") +
+    theme(legend.position="none")
+
+library(gridExtra)
+grid.arrange(Q3_hist, Q3_graph, ncol=2)
+```
+Question 4 - What category of people (based on age) have the highest claim size
+```{r}
+# Get some plots of the data set
+x = Fraud
+#categorize claimsize
+x$ClaimSize_cut = cut(as.numeric(as.character(x$ClaimSize)), 
+                              c((0:5)*20000), right = FALSE, 
+                              labels = c("0-19K", "20K-39K", "40K-59K", 
+                                         "60K-79K", "80K+"))
+
+
+ggplot(data=x, aes(ClaimSize_cut,VehiclePrice)) +
+  geom_bar(stat = "identity", aes(fill = VehiclePrice), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs( title = "VehiclePrice Vs ClaimSize", x = "ClaimSize($)", 
+        y = "Vehicle Price ($)")
+
+
+```
+Question 5 - price of cars vs claim size
+```{r}
+
+#categorize age
+x$Age_cut = cut(as.numeric(as.character(x$Age)), c(seq(10,70,20)), right = FALSE)
+
+x = na.omit(x)
+ggplot(data=x, aes(ClaimSize_cut, Age_cut), na.rm = TRUE) +
+  geom_bar(stat = "identity", aes(fill = Age_cut), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs( title = "Age and ClaimSize Categories", x = "ClaimSize Categories ($)", 
+        y = "Age Categories (Years)")
+
+```
+Question 6 - What sex have the highest claim size
+```{r}
+ggplot(data=x, aes(ClaimSize_cut,Sex)) +
+  geom_bar(stat = "identity", aes(fill = Sex), position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs( title = "Sex vs ClaimSize", x = "ClaimSize($)", 
+        y = "sex")
+```
+Question 7 - Age distribution based fraud found
+```{r}
+# First, given a list for converting the labels 
+default_names = list('0' ="NoFraud", '1'= "Fraud")
+
+# Then, define a labeller to convert labels
+d_labeller = function(variable,value){
+  return(default_names[value])
+}
+
+ggplot(data=x, aes(x=Age)) + 
+  geom_histogram(binwidth=.5, colour="black", fill="white") + 
+  facet_grid(FraudFound_P ~.,labeller = d_labeller) +
+  geom_vline(data=x, aes(xintercept=mean(Age, na.rm=T)), 
+             linetype="dashed", size=1, colour="red") +
+  labs(title = "Histogram of Age and FraudFound_P", x = "Age (Years)",
+       y = "FraudFound_P")
+
+#The bar charts shows there is higher percentage of fraud for people between age 16 and age 40. 
+
+```
+Question 8 - when can we say insurance fraud can occur ?
+```{r}
+ggplot(data=x, aes(x=ClaimSize, colour=FraudFound_P)) +
+  stat_density(geom="line",position="identity") + 
+  stat_density(geom="line", aes(color = "FraudFound_P")) +
+  labs(title = "Density of ClaimSize and Insurance Fraud", 
+       x = "ClaimSize($)", y = "Density") + 
+  scale_colour_discrete(name="Fraud", breaks=c("0", "1", "FraudFound_P"),
+                         labels=c("NoFraud", "Fraud", "All (Yes and No)"))
+## Comment: Light blue line, which represents the density of Fraud has a high peak at claim size about 5000$. It tells us that frauds are liable to occur when the claim size is at that level.
+```
+Question 9 - Marital status of Fraudsters (yearly)
+```{r}
+# Grouped Bar Plot
+ggplot(x, aes(fill=MaritalStatus, y=ClaimSize, x=Year, main = "Pecentage accuracy")) + 
+    geom_bar(position="dodge", stat="identity") +
+  facet_wrap(~FraudFound_P)
+```
+Question 10 - Past number of claims
+```{r}
+PNCtable = as.data.frame(table(x$PastNumberOfClaims))
+PNCtable$Prob = PNCtable$Freq / sum(PNCtable$Freq)
+colnames(PNCtable) = c("PNC", "Freq", "Prob" )
+ggplot(PNCtable, aes(x="", y=Prob, fill=PNC)) +
+  geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0) + 
+  labs(title = "Pie Chart of PNC", y = "Probability")
+## Comment: more than half of the people have made insurance claims previously
+```
+Modelling -  [logistic regression and randomforest] to predict the claim size of "Fraud" claims and "NoFraud" claims based on sex, marital status, age, pnc, vehicle price, accident area
+
+splitting and subsetting the data set dataset
+```{r}
+#Nofraud dataset
+library(caret)
+NoY = Fraud[Fraud$FraudFound_P == 0,]
+#scale claimsize
+NoY$ClaimSize = scale(NoY$ClaimSize)
+i <- createDataPartition(NoY$ClaimSize, p = 3/4,list = FALSE)
+train <- NoY[i,]
+test <- NoY[-i,]
+#Fraud dataset
+YesY = Fraud[Fraud$FraudFound_P == 1,]
+YesY$ClaimSize = scale(YesY$ClaimSize)
+j <- createDataPartition(YesY$ClaimSize, p = 3/4,list = FALSE)
+Ytrain <- YesY[j,]
+Ytest <- YesY[-j,]
+#All
+Fraud$claimSizeS = scale(Fraud$ClaimSize)
+k <- createDataPartition(Fraud$claimSizeS, p = 3/4,list = FALSE)
+Atrain <- Fraud[k,]
+Atest <- Fraud[-k,]
+#set cross validation and evaluation metric
+control <- trainControl(method='cv', number=4)
+metric <- 'RMSE'
+
+
+
+```
+Logistic regression
+```{r}
+#logistic regression on Nofraud
+Nofraud.logit <- train(ClaimSize~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=train, method='glm',
+                   trControl=control, metric=metric)
+        #results on train set
+        View(Nofraud.logit$results)
+        #Function to calculate RMSE and mae on test set
+        calc_rmse = function(actual, predicted) {
+        sqrt(mean((actual - predicted) ^ 2))}
+        calc_mae = function(x,y){
+          mean(x-y)}
+        #rmse
+        calc_rmse(actual = test$ClaimSize,
+          predicted = predict(Nofraud.logit, test))
+        #mae
+        calc_mae(x = test$ClaimSize,
+                 y = predict(Nofraud.logit,test))
+#logistic regression on fraud
+fraud.logit <- train(ClaimSize~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=Ytrain, method='glm',
+                   trControl=control, metric=metric)
+        #results on train set
+        View(fraud.logit$results)
+        #RMSE
+        calc_rmse(actual = Ytest$ClaimSize,
+          predicted = predict(fraud.logit, Ytest))
+        #MAE
+        calc_mae(x = Ytest$ClaimSize,
+                 y = predict(fraud.logit,Ytest))
+#logistic regression All subsets
+Afraud.logit <- train(claimSizeS~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=Atrain, method='glm',
+                   trControl=control, metric=metric)
+        
+        #results on train set
+        View(Afraud.logit$results)
+        
+        #RMSE
+        calc_rmse(actual = Atest$claimSizeS,
+          predicted = predict(Afraud.logit, Atest))
+        #MAE
+        calc_mae(x = Atest$claimSizeS,
+                 y = predict(Afraud.logit,Atest))
+
+```
+RandomForest
+```{r}
+#Random forest on Nofraud
+Nofraud.rf <- train(ClaimSize~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=train, method='ranger',
+                   trControl=control, metric=metric)
+        
+        #results on train set
+        View(Nofraud.rf$results)
+        
+        #rmse
+        calc_rmse(actual = test$ClaimSize,
+          predicted = predict(Nofraud.rf, test))
+        
+        #mae
+        calc_mae(x = test$ClaimSize,
+                 y = predict(Nofraud.rf,test))
+        
+
+#RandomForest on fraud
+fraud.rf <- train(ClaimSize~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=Ytrain, method='ranger',
+                   trControl=control, metric=metric)
+        
+        #results on train set
+        View(fraud.rf$results)
+        
+        #RMSE
+        calc_rmse(actual = Ytest$ClaimSize,
+          predicted = predict(fraud.rf, Ytest))
+        #MAE
+        calc_mae(x = Ytest$ClaimSize,
+                 y = predict(fraud.rf,Ytest))
+        
+#Random Forest on all subsets
+Afraud.rf <- train(claimSizeS~Sex+Age+MaritalStatus+VehiclePrice+AccidentArea, data=Atrain, method='ranger',
+                   trControl=control, metric=metric)
+        
+        #results on train set
+        View(Afraud.rf$results)
+        
+        #RMSE
+        calc_rmse(actual = Atest$claimSizeS,
+          predicted = predict(Afraud.rf, Atest))
+        #MAE
+        calc_mae(x = Atest$claimSizeS,
+                 y = predict(Afraud.rf,Atest))
+        
+```
+Compare results table
+```{r}
+ResultsTable = data.frame(c("NoFraud","Fraud","All","NoFraud","Fraud","All","NoFraud","Fraud","All","NoFraud","Fraud","All"))
+ResultsTable$Model = c("Logit","Logit","Logit","Rf","Rf","Rf","Logit","Logit","Logit","Rf","Rf","Rf")
+ResultsTable$Metric = c("RMSE","RMSE","RMSE","RMSE","RMSE","RMSE","MAE","MAE","MAE","MAE","MAE","MAE")
+ResultsTable$Values = c(0.59,0.51,0.60,0.59,0.51,0.60,0.0018,0.083,-0.0014,0.0013,0.092,-0.018)
+colnames(ResultsTable) = c("Subset","Model","Metric","Values")
+```
